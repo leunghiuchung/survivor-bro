@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Camera, Shield, AlertTriangle, MessageSquare, Trash2, EyeOff, Search, ChevronRight, Bell, Zap, Info } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Camera, Shield, AlertTriangle, MessageSquare, Trash2, EyeOff, Search, ChevronRight, Bell, Zap, Info, RefreshCcw } from 'lucide-react';
 import { ScannedPhoto, AppNotification, RiskLevel, AnalysisResult } from './types';
 import { analyzePhoto } from './services/geminiService';
 
@@ -8,14 +8,12 @@ const App: React.FC = () => {
   const [photos, setPhotos] = useState<ScannedPhoto[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showWelcome, setShowWelcome] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addNotification = (msg: string, photoId: string) => {
     const newNotif = { id: Math.random().toString(36).substr(2, 9), message: msg, photoId };
     setNotifications(prev => [newNotif, ...prev]);
-    // Auto remove after 5s
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== newNotif.id));
     }, 5000);
@@ -45,9 +43,11 @@ const App: React.FC = () => {
           if (result.riskLevel === RiskLevel.HIGH || result.riskLevel === RiskLevel.CRITICAL) {
             addNotification("兄弟，有嘢搞", newPhoto.id);
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error("Failed to analyze", err);
+          const errorMsg = err.message?.includes("API_KEY_MISSING") ? "未設定 API Key" : "分析失敗";
           setPhotos(prev => prev.map(p => p.id === newPhoto.id ? { ...p, analyzing: false } : p));
+          addNotification(errorMsg, newPhoto.id);
         }
       };
       reader.readAsDataURL(file);
@@ -110,7 +110,7 @@ const App: React.FC = () => {
               啟動求生模式 <Zap className="w-4 h-4 group-hover:scale-125 transition-transform" />
             </button>
             
-            <p className="text-[10px] text-zinc-600 font-mono">BRO CODE COMPLIANT v1.0.4</p>
+            <p className="text-[10px] text-zinc-600 font-mono text-center">BRO CODE COMPLIANT v1.0.5</p>
           </div>
         </div>
       )}
@@ -135,7 +135,7 @@ const App: React.FC = () => {
       {/* Main UI Layout */}
       <div className="flex-1 flex flex-col md:flex-row h-full">
         {/* Stream Sidebar */}
-        <aside className={`w-full md:w-80 lg:w-96 border-r border-zinc-800 bg-zinc-950 flex flex-col transition-all ${isSidebarOpen ? '' : 'hidden md:flex'}`}>
+        <aside className="w-full md:w-80 lg:w-96 border-r border-zinc-800 bg-zinc-950 flex flex-col">
           <div className="p-6 flex items-center justify-between border-b border-zinc-800">
             <div className="flex items-center gap-2">
               <Shield className="w-6 h-6 text-red-500" />
@@ -203,6 +203,11 @@ const App: React.FC = () => {
                     {photo.analysis.riskLevel}
                   </div>
                 )}
+                {!photo.analyzing && !photo.analysis && (
+                  <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center">
+                    <AlertTriangle className="w-6 h-6 text-white" />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -214,7 +219,7 @@ const App: React.FC = () => {
             <div className="h-full flex flex-col items-center justify-center p-12 text-center text-zinc-700">
               <Shield className="w-24 h-24 mb-6 opacity-10" />
               <h2 className="text-2xl font-bold mb-2">生存模式：待機中</h2>
-              <p className="max-w-md">當你喺「危險環境」影咗相，我會第一時間幫你分析瀨嘢位。兄弟嘅責任，就係幫你兜到個劇本出嚟。</p>
+              <p className="max-w-md text-sm">當你喺「危險環境」影咗相，我會第一時間幫你分析瀨嘢位。兄弟嘅責任，就係幫你兜到個劇本出嚟。</p>
             </div>
           ) : (
             <div className="p-4 md:p-8 max-w-5xl mx-auto w-full">
@@ -243,7 +248,7 @@ const App: React.FC = () => {
                 {/* Analysis Report */}
                 <div className="space-y-6">
                   {selectedPhoto.analyzing ? (
-                    <div className="h-full flex flex-col items-center justify-center space-y-4 text-zinc-500">
+                    <div className="h-full flex flex-col items-center justify-center space-y-4 py-20 text-zinc-500">
                       <div className="w-12 h-12 border-4 border-zinc-800 border-t-red-600 rounded-full animate-spin"></div>
                       <p className="font-mono text-sm tracking-widest uppercase">Analyzing Risk Vectors...</p>
                     </div>
@@ -265,7 +270,7 @@ const App: React.FC = () => {
                             LEVEL: {selectedPhoto.analysis.riskLevel}
                           </span>
                         </div>
-                        <p className="text-lg leading-relaxed italic text-zinc-200">
+                        <p className="text-lg leading-relaxed italic text-zinc-200 font-medium">
                           「{selectedPhoto.analysis.summary}」
                         </p>
                       </div>
@@ -332,7 +337,13 @@ const App: React.FC = () => {
                       </button>
                     </div>
                   ) : (
-                    <div className="text-zinc-500 text-center py-20">報告生成失敗，請再嘗試。</div>
+                    <div className="text-center py-20 space-y-4">
+                      <div className="flex justify-center">
+                        <AlertTriangle className="w-12 h-12 text-red-500" />
+                      </div>
+                      <div className="text-zinc-400">分析失敗。兄弟，你可能未 Set 好 API Key。</div>
+                      <p className="text-xs text-zinc-600 px-10">請去 Vercel 設定 API_KEY 變數，然後 Redeploy。</p>
+                    </div>
                   )}
                 </div>
               </div>
@@ -349,7 +360,7 @@ const App: React.FC = () => {
           <span>THREATS: {photos.filter(p => p.analysis?.riskLevel === RiskLevel.CRITICAL || p.analysis?.riskLevel === RiskLevel.HIGH).length}</span>
         </div>
         <div>
-          SURVIVAL BRO v1.0.4 - STAY SAFE BRO
+          SURVIVAL BRO v1.0.5 - STAY SAFE BRO
         </div>
       </footer>
     </div>

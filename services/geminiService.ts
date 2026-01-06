@@ -1,8 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, RiskLevel } from "../types";
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+import { AnalysisResult } from "../types";
 
 const SYSTEM_INSTRUCTION = `
 You are a "Survival Brother" (求生兄弟), a professional, calm, and dark-humored survival expert for men. 
@@ -54,6 +52,15 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzePhoto = async (base64Image: string): Promise<AnalysisResult> => {
+  const apiKey = process.env.API_KEY;
+
+  if (!apiKey || apiKey === "undefined") {
+    throw new Error("API_KEY_MISSING: 兄弟，你仲未喺 Vercel 設定 API_KEY 呀！");
+  }
+
+  // Always create a new instance to ensure we use the latest injected key
+  const ai = new GoogleGenAI({ apiKey });
+
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -70,7 +77,8 @@ export const analyzePhoto = async (base64Image: string): Promise<AnalysisResult>
       }
     });
 
-    const result = JSON.parse(response.text);
+    const text = response.text || "{}";
+    const result = JSON.parse(text);
     return result as AnalysisResult;
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
