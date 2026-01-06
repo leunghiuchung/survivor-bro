@@ -1,0 +1,7 @@
+{
+  "name": "Survivor Bro (男人求生助手)",
+  "description": "An automated AI survival assistant that scans photos for potential 'relationship risks' (reflections, female features, dating environments) and generates survival scripts and excuses in a 'survival brother' tone.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
