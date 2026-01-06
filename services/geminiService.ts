@@ -54,11 +54,10 @@ const RESPONSE_SCHEMA = {
 export const analyzePhoto = async (base64Image: string): Promise<AnalysisResult> => {
   const apiKey = process.env.API_KEY;
 
-  if (!apiKey || apiKey === "undefined") {
-    throw new Error("API_KEY_MISSING: 兄弟，你仲未喺 Vercel 設定 API_KEY 呀！");
+  if (!apiKey || apiKey === "undefined" || apiKey.length < 10) {
+    throw new Error("API_KEY_MISSING: 兄弟，你 Vercel 嗰度填錯咗格呀！Name 嗰格要填 'API_KEY'，Value 嗰格先係填你串長碼！");
   }
 
-  // Always create a new instance to ensure we use the latest injected key
   const ai = new GoogleGenAI({ apiKey });
 
   try {
