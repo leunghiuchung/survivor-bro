@@ -52,10 +52,11 @@ const RESPONSE_SCHEMA = {
 };
 
 export const analyzePhoto = async (base64Image: string): Promise<AnalysisResult> => {
+  // Vite will replace this during build if the environment variable is named API_KEY
   const apiKey = process.env.API_KEY;
 
-  if (!apiKey || apiKey === "undefined" || apiKey.length < 10) {
-    throw new Error("API_KEY_MISSING: 兄弟，你 Vercel 嗰度填錯咗格呀！Name 嗰格要填 'API_KEY'，Value 嗰格先係填你串長碼！");
+  if (!apiKey || apiKey === "undefined" || apiKey === "" || apiKey.length < 10) {
+    throw new Error("API_KEY_ERROR: 兄弟，仲係讀唔到粒 Key。請去 Vercel 將 'api_key_' 改名做 'API_KEY' (全大寫，冇底線)，然後一定要 Redeploy 隻 App！");
   }
 
   const ai = new GoogleGenAI({ apiKey });
