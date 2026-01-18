@@ -1,12 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult } from "../types";
 
-// 宣告 process 俾 TypeScript 睇，解決 TS2580 報錯
-declare global {
-  interface Window {
-    process: any;
-  }
-}
 declare var process: {
   env: {
     API_KEY: string;
@@ -54,36 +48,65 @@ const RESPONSE_SCHEMA = {
   required: ["riskLevel", "riskSpots", "scripts", "excuses", "summary", "actionNeeded"]
 };
 
-export const analyzePhoto = async (base64Image: string): Promise<AnalysisResult> => {
-  // 喺 Vite 環境，process.env.API_KEY 會喺 Build time 被替換
+const wait = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+export const analyzePhoto = async (base64Image: string, retryCount = 3): Promise<AnalysisResult> => {
   const apiKey = process.env.API_KEY;
 
   if (!apiKey || apiKey === "undefined" || apiKey === "") {
-    throw new Error("API_KEY_MISSING: 兄弟屌你，系統仲係讀唔到粒 Key。請去 Vercel 設定 API_KEY 並確保 Deployment 係綠色成功狀態。");
+    throw new Error("API_KEY_MISSING: 兄弟，仲未得！請去 Vercel 設定 API_KEY (全大寫) 並重新 Deploy。");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  let lastError: any = null;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: {
-        parts: [
-          { text: "Analyze this photo for relationship risks. Be precise and use the 'Survival Brother' persona." },
-          { inlineData: { mimeType: "image/jpeg", data: base64Image.split(',')[1] || base64Image } }
-        ]
-      },
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA
+  for (let attempt = 1; attempt <= retryCount; attempt++) {
+    try {
+      // Create a fresh instance for each attempt to ensure the key is correctly applied
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const analysisPromise = ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: {
+          parts: [
+            { text: "Analyze this photo for relationship risks. Be precise and use the 'Survival Brother' persona." },
+            { inlineData: { mimeType: "image/jpeg", data: base64Image.split(',')[1] || base64Image } }
+          ]
+        },
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA
+        }
+      });
+
+      // Timeout logic: 20 seconds
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("TIMEOUT_ERROR")), 20000)
+      );
+
+      const response: any = await Promise.race([analysisPromise, timeoutPromise]);
+      const resultText = response.text || "{}";
+      return JSON.parse(resultText) as AnalysisResult;
+
+    } catch (error: any) {
+      lastError = error;
+      console.warn(`Attempt ${attempt} failed:`, error.message);
+
+      // Handle specific errors
+      if (error.message === "TIMEOUT_ERROR") {
+        if (attempt === retryCount) throw new Error("TIMEOUT: AI 諗得太耐，請再試。");
+      } else if (error.status === 429) {
+        if (attempt === retryCount) throw new Error("ERROR_429: 太頻繁喇，AI 都要唞唞，等陣再試。");
+      } else if (error.status >= 500) {
+        if (attempt === retryCount) throw new Error(`ERROR_${error.status}: Google Server 爆咗，請稍後。`);
       }
-    });
 
-    const resultText = response.text || "{}";
-    return JSON.parse(resultText) as AnalysisResult;
-  } catch (error) {
-    console.error("Gemini Error:", error);
-    throw error;
+      // If not the last attempt, wait before retrying
+      if (attempt < retryCount) {
+        await wait(1000 * attempt); // Exponential backoff: 1s, 2s...
+      }
+    }
   }
+
+  throw new Error(lastError?.message || "未知錯誤，請聯絡開發者兄弟。");
 };
