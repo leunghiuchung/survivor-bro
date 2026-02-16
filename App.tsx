@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Shield, AlertTriangle, MessageSquare, Trash2, EyeOff, Search, ChevronRight, Bell, Zap, Info, RefreshCcw } from 'lucide-react';
+import { Camera, Shield, AlertTriangle, MessageSquare, Trash2, EyeOff, Search, ChevronRight, Bell, Zap, Info, RefreshCcw, WifiOff } from 'lucide-react';
 import { ScannedPhoto, AppNotification, RiskLevel, AnalysisResult } from './types';
 import { analyzePhoto } from './services/geminiService';
 
@@ -8,7 +8,7 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
-  const [lastErrorMsg, setLastErrorMsg] = useState<string | null>(null);
+  const [isFallbackMode, setIsFallbackMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const addNotification = (msg: string, photoId: string) => {
@@ -22,8 +22,6 @@ const App: React.FC = () => {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-
-    setLastErrorMsg(null);
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -39,18 +37,17 @@ const App: React.FC = () => {
         setPhotos(prev => [newPhoto, ...prev]);
 
         try {
-          const result = await analyzePhoto(base64);
+          const { result, mode } = await analyzePhoto(base64);
+          if (mode === 'FALLBACK') setIsFallbackMode(true);
+          
           setPhotos(prev => prev.map(p => p.id === newPhoto.id ? { ...p, analyzing: false, analysis: result } : p));
           
           if (result.riskLevel === RiskLevel.HIGH || result.riskLevel === RiskLevel.CRITICAL) {
-            addNotification("兄弟，有嘢搞", newPhoto.id);
+            addNotification(mode === 'FALLBACK' ? "⚠️ 離線警告：發現危險" : "🚨 兄弟，大鑊嘢！", newPhoto.id);
           }
         } catch (err: any) {
-          console.error("Failed to analyze", err);
-          const errorMsg = err.message || "分析失敗";
-          setLastErrorMsg(errorMsg);
           setPhotos(prev => prev.map(p => p.id === newPhoto.id ? { ...p, analyzing: false } : p));
-          addNotification(errorMsg.split(':')[0], newPhoto.id);
+          addNotification("分析出錯，請再試", newPhoto.id);
         }
       };
       reader.readAsDataURL(file);
@@ -85,35 +82,14 @@ const App: React.FC = () => {
               </p>
             </div>
 
-            <div className="p-5 bg-zinc-950/50 rounded-2xl border border-zinc-800 text-left space-y-3 relative">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center shrink-0">
-                  <Search className="w-4 h-4 text-red-400" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-zinc-300">影像深度偵測</div>
-                  <div className="text-[10px] text-zinc-500">反射、女性特徵、危險餐飲環境</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center shrink-0">
-                  <MessageSquare className="w-4 h-4 text-blue-400" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-zinc-300">生存劇本生成</div>
-                  <div className="text-[10px] text-zinc-500">提供 3 個以上合理藉口及對話範本</div>
-                </div>
-              </div>
-            </div>
-
             <button 
               onClick={() => setShowWelcome(false)}
               className="w-full py-5 bg-red-600 hover:bg-red-500 text-white font-black rounded-2xl transition-all shadow-lg shadow-red-900/30 uppercase tracking-[0.2em] text-sm group flex items-center justify-center gap-2"
             >
-              啟動求生模式 <Zap className="w-4 h-4 group-hover:scale-125 transition-transform" />
+              進入求生基地 <Zap className="w-4 h-4 group-hover:scale-125 transition-transform" />
             </button>
             
-            <p className="text-[10px] text-zinc-600 font-mono text-center">BRO CODE COMPLIANT v1.1.0</p>
+            <p className="text-[10px] text-zinc-600 font-mono text-center">BRO CODE COMPLIANT v1.2.0</p>
           </div>
         </div>
       )}
@@ -123,11 +99,11 @@ const App: React.FC = () => {
         {notifications.map(n => (
           <div 
             key={n.id} 
-            className="mb-2 bg-red-600/90 backdrop-blur-md text-white px-4 py-3 rounded-xl shadow-2xl flex items-center justify-between pointer-events-auto cursor-pointer animate-bounce border border-red-400"
+            className="mb-2 bg-red-600/95 backdrop-blur-md text-white px-4 py-3 rounded-xl shadow-2xl flex items-center justify-between pointer-events-auto cursor-pointer animate-bounce border border-red-400"
             onClick={() => setSelectedPhotoId(n.photoId)}
           >
             <div className="flex items-center gap-3">
-              <Zap className="w-5 h-5 fill-current" />
+              <AlertTriangle className="w-5 h-5 fill-current" />
               <span className="font-bold tracking-wider">{n.message}</span>
             </div>
             <ChevronRight className="w-5 h-5" />
@@ -135,7 +111,6 @@ const App: React.FC = () => {
         ))}
       </div>
 
-      {/* Main UI Layout */}
       <div className="flex-1 flex flex-col md:flex-row h-full">
         {/* Stream Sidebar */}
         <aside className="w-full md:w-80 lg:w-96 border-r border-zinc-800 bg-zinc-950 flex flex-col">
@@ -144,64 +119,44 @@ const App: React.FC = () => {
               <Shield className="w-6 h-6 text-red-500" />
               <h1 className="text-xl font-bold tracking-tighter uppercase italic">Survivor Bro</h1>
             </div>
-            <div className="flex gap-2">
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors border border-zinc-700"
-                title="上傳危險影像"
-              >
-                <Camera className="w-5 h-5" />
-              </button>
-            </div>
-            <input 
-              type="file" 
-              multiple 
-              accept="image/*" 
-              ref={fileInputRef} 
-              className="hidden" 
-              onChange={handleFileUpload} 
-            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 bg-red-600 hover:bg-red-500 rounded-lg transition-colors shadow-lg shadow-red-900/20"
+            >
+              <Camera className="w-5 h-5" />
+            </button>
+            <input type="file" multiple accept="image/*" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div className="text-xs font-semibold text-zinc-500 uppercase tracking-widest px-2">影像流掃描中...</div>
             {photos.length === 0 && (
-              <div className="text-center py-20 text-zinc-600">
-                <div className="mb-4 flex justify-center">
-                  <Search className="w-12 h-12 opacity-20" />
-                </div>
-                <p className="text-xs">仲未有嘢要處理。<br/>上傳相片開始掃描。</p>
+              <div className="text-center py-20 text-zinc-700">
+                <Search className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                <p className="text-xs uppercase tracking-widest">暫無威脅影像</p>
               </div>
             )}
             {photos.map(photo => (
               <div 
                 key={photo.id}
                 onClick={() => setSelectedPhotoId(photo.id)}
-                className={`relative rounded-xl overflow-hidden border-2 cursor-pointer transition-all duration-300 group ${
-                  selectedPhotoId === photo.id ? 'border-red-500 ring-2 ring-red-500/20' : 'border-zinc-800 hover:border-zinc-600'
+                className={`relative rounded-xl overflow-hidden border-2 cursor-pointer transition-all ${
+                  selectedPhotoId === photo.id ? 'border-red-500 scale-[1.02]' : 'border-zinc-800'
                 }`}
               >
-                <img src={photo.url} alt="scanned" className="w-full h-32 object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                <img src={photo.url} alt="scan" className="w-full h-32 object-cover opacity-70" />
                 {photo.analyzing && (
-                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-[2px]">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
-                      <span className="text-xs font-mono text-red-500 uppercase tracking-tighter">Scanning...</span>
+                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                      <span className="text-[10px] font-mono text-red-500 uppercase tracking-widest">Scanning...</span>
                     </div>
                   </div>
                 )}
                 {photo.analysis && (
-                  <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-bold ${
-                    photo.analysis.riskLevel === RiskLevel.CRITICAL ? 'bg-red-600 text-white animate-pulse' :
-                    photo.analysis.riskLevel === RiskLevel.HIGH ? 'bg-red-500 text-white' :
-                    photo.analysis.riskLevel === RiskLevel.MEDIUM ? 'bg-orange-500 text-white' : 'bg-green-600 text-white'
+                  <div className={`absolute top-2 right-2 px-2 py-0.5 rounded text-[10px] font-black ${
+                    photo.analysis.riskLevel === RiskLevel.CRITICAL ? 'bg-red-600' : 'bg-zinc-700'
                   }`}>
                     {photo.analysis.riskLevel}
-                  </div>
-                )}
-                {!photo.analyzing && !photo.analysis && (
-                  <div className="absolute inset-0 bg-red-900/40 flex items-center justify-center">
-                    <AlertTriangle className="w-6 h-6 text-white" />
                   </div>
                 )}
               </div>
@@ -210,149 +165,110 @@ const App: React.FC = () => {
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 bg-black flex flex-col relative overflow-y-auto">
+        <main className="flex-1 bg-black overflow-y-auto pb-20">
           {!selectedPhoto ? (
-            <div className="h-full flex flex-col items-center justify-center p-12 text-center text-zinc-700">
-              <Shield className="w-24 h-24 mb-6 opacity-10" />
-              <h2 className="text-2xl font-bold mb-2 uppercase italic tracking-tighter">Standby Mode</h2>
-              <p className="max-w-md text-sm">當你喺「危險環境」影咗相，我會第一時間幫你分析。兄弟嘅責任，就係幫你諗好晒啲劇本。</p>
+            <div className="h-full flex flex-col items-center justify-center p-12 text-zinc-800">
+              <Shield className="w-32 h-32 mb-6 opacity-5" />
+              <h2 className="text-xl font-black uppercase tracking-widest italic">Waiting for Input...</h2>
             </div>
           ) : (
-            <div className="p-4 md:p-8 max-w-5xl mx-auto w-full">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Photo Viewer */}
+            <div className="p-4 md:p-10 max-w-4xl mx-auto space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-4">
-                  <div className="rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl bg-zinc-900 group relative">
-                    <img src={selectedPhoto.url} alt="Detail" className="w-full h-auto max-h-[70vh] object-contain" />
-                    <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-zinc-700 flex items-center gap-2 text-xs font-mono">
-                      <Zap className="w-3 h-3 text-red-500" />
-                      ID: {selectedPhoto.id}
-                    </div>
+                  <div className="rounded-3xl overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl">
+                    <img src={selectedPhoto.url} className="w-full h-auto" alt="focus" />
                   </div>
-                  
-                  {/* Quick Actions */}
                   <div className="grid grid-cols-2 gap-3">
-                    <button className="flex items-center justify-center gap-2 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all border border-zinc-700 font-bold text-sm">
-                      <EyeOff className="w-4 h-4 text-red-500" /> 一鍵模糊背景
+                    <button className="py-4 bg-zinc-900 border border-zinc-800 rounded-2xl text-xs font-black uppercase flex items-center justify-center gap-2 hover:bg-zinc-800 transition-colors">
+                      <EyeOff className="w-4 h-4 text-red-500" /> 模糊特徵
                     </button>
-                    <button className="flex items-center justify-center gap-2 py-3 px-4 bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all border border-zinc-700 font-bold text-sm">
-                      <Shield className="w-4 h-4 text-blue-500" /> 移動至私隱空間
+                    <button className="py-4 bg-zinc-900 border border-zinc-800 rounded-2xl text-xs font-black uppercase flex items-center justify-center gap-2 hover:bg-zinc-800 transition-colors">
+                      <Shield className="w-4 h-4 text-blue-500" /> 私隱移動
                     </button>
                   </div>
                 </div>
 
-                {/* Analysis Report */}
                 <div className="space-y-6">
                   {selectedPhoto.analyzing ? (
-                    <div className="h-full flex flex-col items-center justify-center space-y-4 py-20 text-zinc-500">
-                      <div className="w-12 h-12 border-4 border-zinc-800 border-t-red-600 rounded-full animate-spin"></div>
-                      <p className="font-mono text-xs tracking-widest uppercase">Analyzing Threat Vectors...</p>
+                    <div className="py-20 flex flex-col items-center gap-4 text-zinc-600">
+                      <RefreshCcw className="w-8 h-8 animate-spin" />
+                      <p className="text-xs font-mono tracking-[0.3em] uppercase">Processing Threat Report...</p>
                     </div>
-                  ) : selectedPhoto.analysis ? (
-                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      {/* Risk Header */}
-                      <div className={`p-6 rounded-2xl border ${
+                  ) : selectedPhoto.analysis && (
+                    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                      {/* Risk Box */}
+                      <div className={`p-6 rounded-3xl border ${
                         selectedPhoto.analysis.riskLevel === RiskLevel.CRITICAL || selectedPhoto.analysis.riskLevel === RiskLevel.HIGH
-                        ? 'bg-red-950/20 border-red-500/50 risk-glow-red'
-                        : 'bg-zinc-900 border-zinc-700'
+                        ? 'bg-red-950/20 border-red-500/50'
+                        : 'bg-zinc-900/50 border-zinc-800'
                       }`}>
-                        <div className="flex items-center justify-between mb-4">
-                          <span className="text-[10px] font-black tracking-[0.2em] uppercase opacity-60">風險報告報告書</span>
-                          <span className={`px-3 py-1 rounded-full text-xs font-black uppercase ${
-                            selectedPhoto.analysis.riskLevel === RiskLevel.CRITICAL ? 'bg-red-600' :
-                            selectedPhoto.analysis.riskLevel === RiskLevel.HIGH ? 'bg-red-500' :
-                            selectedPhoto.analysis.riskLevel === RiskLevel.MEDIUM ? 'bg-orange-500' : 'bg-green-600'
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-[10px] font-black tracking-widest text-zinc-500 uppercase">Risk Level</span>
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${
+                            selectedPhoto.analysis.riskLevel === RiskLevel.CRITICAL ? 'bg-red-600' : 'bg-zinc-700'
                           }`}>
-                            LEVEL: {selectedPhoto.analysis.riskLevel}
+                            {selectedPhoto.analysis.riskLevel}
                           </span>
                         </div>
-                        <p className="text-lg leading-relaxed italic text-zinc-100 font-bold">
-                          「{selectedPhoto.analysis.summary}」
-                        </p>
+                        <p className="text-lg font-black italic leading-snug">「{selectedPhoto.analysis.summary}」</p>
                       </div>
 
-                      {/* Analysis Details */}
+                      {/* Details */}
                       <div className="space-y-4">
-                        <h3 className="flex items-center gap-2 text-red-500 font-black text-sm uppercase tracking-wider">
+                        <h3 className="text-xs font-black uppercase tracking-widest text-red-500 flex items-center gap-2">
                           <AlertTriangle className="w-4 h-4" /> 瀨嘢位偵測
                         </h3>
-                        <ul className="grid grid-cols-1 gap-2">
-                          {selectedPhoto.analysis.riskSpots.map((spot, idx) => (
-                            <li key={idx} className="bg-zinc-900 border border-zinc-800 p-3 rounded-xl flex items-start gap-3 text-sm">
-                              <span className="w-5 h-5 flex items-center justify-center rounded-lg bg-red-500/10 text-red-500 font-black text-[10px] shrink-0 mt-0.5 border border-red-500/20">
-                                {idx + 1}
-                              </span>
+                        <div className="space-y-2">
+                          {selectedPhoto.analysis.riskSpots.map((spot, i) => (
+                            <div key={i} className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800 text-sm font-medium">
                               {spot}
-                            </li>
+                            </div>
                           ))}
-                        </ul>
+                        </div>
                       </div>
 
-                      {/* Survival Scripts */}
+                      {/* Scripts */}
                       <div className="space-y-4">
-                        <h3 className="flex items-center gap-2 text-blue-500 font-black text-sm uppercase tracking-wider">
-                          <MessageSquare className="w-4 h-4" /> 求生對話劇本
+                        <h3 className="text-xs font-black uppercase tracking-widest text-blue-500 flex items-center gap-2">
+                          <MessageSquare className="w-4 h-4" /> 求生劇本
                         </h3>
                         <div className="space-y-3">
-                          {selectedPhoto.analysis.scripts.map((script, idx) => (
-                            <div key={idx} className="bg-zinc-900 border-l-4 border-blue-600 p-4 rounded-r-xl italic text-sm text-zinc-300 leading-relaxed shadow-lg">
+                          {selectedPhoto.analysis.scripts.map((script, i) => (
+                            <div key={i} className="bg-zinc-900 p-5 rounded-2xl border-l-4 border-blue-600 italic text-sm text-zinc-300">
                               {script}
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      {/* Reasonable Excuses */}
+                      {/* Excuses */}
                       <div className="space-y-4">
-                        <h3 className="flex items-center gap-2 text-green-500 font-black text-sm uppercase tracking-wider">
-                          <Zap className="w-4 h-4" /> 合理路過理由
+                        <h3 className="text-xs font-black uppercase tracking-widest text-green-500 flex items-center gap-2">
+                          <Zap className="w-4 h-4" /> 合理藉口
                         </h3>
                         <div className="grid grid-cols-1 gap-2">
-                          {selectedPhoto.analysis.excuses.map((excuse, idx) => (
-                            <div key={idx} className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl flex items-center justify-between group hover:bg-zinc-800 transition-colors">
-                              <span className="text-sm font-medium">{excuse}</span>
+                          {selectedPhoto.analysis.excuses.map((excuse, i) => (
+                            <div key={i} className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-800 text-sm flex justify-between items-center group">
+                              <span>{excuse}</span>
                               <button 
                                 onClick={() => navigator.clipboard.writeText(excuse)}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1 bg-zinc-700 rounded-lg text-[10px] font-bold hover:bg-zinc-600"
+                                className="opacity-0 group-hover:opacity-100 p-2 hover:bg-zinc-800 rounded-lg transition-all"
                               >
-                                複製
+                                <ChevronRight className="w-4 h-4" />
                               </button>
                             </div>
                           ))}
                         </div>
                       </div>
-                      
+
                       <button 
                         onClick={() => {
                           setPhotos(prev => prev.filter(p => p.id !== selectedPhotoId));
                           setSelectedPhotoId(null);
                         }}
-                        className="w-full flex items-center justify-center gap-2 py-4 text-zinc-600 hover:text-red-500 transition-all border-t border-zinc-900 mt-8 text-xs font-bold uppercase tracking-widest"
+                        className="w-full py-4 text-[10px] font-black uppercase tracking-widest text-zinc-600 hover:text-red-500 transition-colors"
                       >
-                        <Trash2 className="w-4 h-4" /> 永久銷毀此證據
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="text-center py-20 space-y-6">
-                      <div className="flex justify-center">
-                        <div className="w-16 h-16 bg-red-600/10 rounded-full flex items-center justify-center border border-red-600/30">
-                          <AlertTriangle className="w-8 h-8 text-red-600" />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="text-zinc-200 font-bold uppercase tracking-widest">系統連線異常</div>
-                        <div className="text-xs text-red-500 font-mono bg-red-500/10 py-2 px-4 rounded-lg inline-block border border-red-500/20">
-                          {lastErrorMsg || "連線逾時 (TIMEOUT_ERROR)"}
-                        </div>
-                      </div>
-                      <p className="text-[10px] text-zinc-600 px-10 leading-relaxed">
-                        兄弟，可能 Vercel 條水喉唔係好順，或者粒 API Key 仲未生效。請檢查 Vercel 環境變數並確保部署狀態係「綠色」。
-                      </p>
-                      <button 
-                        onClick={() => selectedPhotoId && handleFileUpload({ target: { files: [] } } as any)} // Placeholder for retry
-                        className="px-6 py-2 bg-zinc-800 rounded-full text-xs font-bold hover:bg-zinc-700 transition-colors"
-                      >
-                        重新連線
+                        永久銷毀證據
                       </button>
                     </div>
                   )}
@@ -363,15 +279,23 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Footer / Status Bar */}
-      <footer className="fixed bottom-0 left-0 right-0 bg-black/80 backdrop-blur-md border-t border-zinc-900 py-2.5 px-6 flex items-center justify-between text-[9px] uppercase tracking-[0.2em] text-zinc-600 z-40 font-mono">
+      {/* Status Bar */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-black/80 backdrop-blur-xl border-t border-zinc-900 py-3 px-6 flex items-center justify-between z-50">
         <div className="flex items-center gap-6">
-          <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div> SYSTEM_READY</span>
-          <span className="hidden md:inline">SCAN_POOL: {photos.length}</span>
-          <span className="text-red-900 font-bold">THREAT_LEVEL: {photos.filter(p => p.analysis?.riskLevel === RiskLevel.CRITICAL).length > 0 ? 'CRITICAL' : 'STABLE'}</span>
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full animate-pulse ${isFallbackMode ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.6)]' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'}`} />
+            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-500">
+              {isFallbackMode ? 'Local_Simulation_Mode' : 'AI_Cloud_Active'}
+            </span>
+          </div>
+          {isFallbackMode && (
+             <div className="flex items-center gap-2 text-orange-500 text-[9px] font-black uppercase tracking-[0.2em]">
+               <WifiOff className="w-3 h-3" /> API_OFFLINE
+             </div>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-           <Zap className="w-3 h-3" /> SURVIVOR_BRO_V1.1
+        <div className="text-[9px] font-black uppercase tracking-[0.2em] text-zinc-600">
+          Survivor_Bro_v1.2.0_HK
         </div>
       </footer>
     </div>
